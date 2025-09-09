@@ -126,3 +126,108 @@ def data() -> Union[pd.DataFrame, None]:
         logger.error(f"Unexpected error loading data: {e}")
         print(f"Error loading data: {e}")
         return None
+
+
+import osmnx as ox
+import matplotlib.pyplot as plt
+
+features = [
+    ("building", None),
+    ("amenity", None),
+    ("amenity", "school"),
+    ("amenity", "hospital"),
+    ("amenity", "restaurant"),
+    ("amenity", "cafe"),
+    ("shop", None),
+    ("tourism", None),
+    ("tourism", "hotel"),
+    ("tourism", "museum"),
+    ("leisure", None),
+    ("leisure", "park"),
+    ("historic", None),
+    ("amenity", "place_of_worship"),
+]
+
+
+tags = {k: True for k, _ in features} if features else {}
+
+
+def get_osm_datapoints(latitude, longitude, box_size_km=2, poi_tags=None):
+
+    box_width = box_size_km / 111
+    box_height = box_size_km / 111
+    north = latitude + box_height
+    south = latitude - box_height
+    west = longitude - box_width
+    east = longitude + box_width
+
+    try:
+        bbox = (west, south, east, north)
+        pois = ox.features_from_bbox(bbox, tags=tags)
+        return pois.head()
+
+    except Exception as e:
+        print(f"[Warning] OSM query failed: {e}")
+        return None
+
+
+def plot_city_map(place_name, latitude=None, longitude=None, coords_df=None, box_size_km=2, poi_tags=None):
+
+    if coords_df is not None: 
+        lat_min, lat_max = coords_df["Latitude"].min(), coords_df["Latitude"].max()
+        lon_min, lon_max = coords_df["Longitude"].min(), coords_df["Longitude"].max()
+
+        lat_margin = box_size_km / 111
+        lon_margin = box_size_km / 111
+        north = lat_max + lat_margin/10
+        south = lat_min - lat_margin/10
+        west = lon_min - lon_margin/10
+        east = lon_max + lon_margin/10
+
+    elif latitude is not None and longitude is not None: 
+        box_width = box_size_km / 111
+        box_height = box_size_km / 111
+        north = latitude + box_height/2
+        south = latitude - box_height/2
+        west = longitude - box_width/2
+        east = longitude + box_width/2
+
+    else:
+        raise ValueError("No Cordinates available")
+
+    bbox = (west, south, east, north)
+
+    graph = ox.graph_from_bbox(bbox)
+    area = ox.geocode_to_gdf(place_name)
+    nodes, edges = ox.graph_to_gdfs(graph)
+    buildings = ox.features_from_bbox(bbox, tags={"building": True})
+    pois = ox.features_from_bbox(bbox, poi_tags)
+
+    try:
+        fig, ax = plt.subplots(figsize=(6,6))
+        area.plot(ax=ax, color="tan", alpha=0.5)
+        buildings.plot(ax=ax, facecolor="gray", edgecolor="gray")
+        edges.plot(ax=ax, linewidth=1, edgecolor="black", alpha=0.3)
+        nodes.plot(ax=ax, color="black", markersize=1, alpha=0.3)
+        pois.plot(ax=ax, color="green", markersize=5, alpha=1)
+
+        if coords_df is not None:
+            ax.scatter(
+                coords_df["Longitude"],
+                coords_df["Latitude"],
+                c="red", s=10, marker="o", label="Cameras"
+            )
+        else:
+            ax.scatter(
+                longitude, latitude,
+                c="red", s=30, marker="x", label="Point"
+            )
+
+        ax.set_xlim(west, east)
+        ax.set_ylim(south, north)
+        ax.set_title(f"{place_name}", fontsize=14)
+        ax.legend()
+        plt.show()
+
+    except Exception as e:
+        print(f"[Warning] Could not plot map: {e}")
